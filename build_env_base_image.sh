@@ -1,4 +1,4 @@
 #!/bin/bash
-version=${1:-1.0.0}
+version=${1:-1.0}
 echo "use version :$version"
-docker build --file ./Dockerfile_env --tag lisacumt/bigdata_base_env_img:$version .
+docker build --file ./Dockerfile_env_ubuntu --tag duhaode520/bigdata_env:$version .

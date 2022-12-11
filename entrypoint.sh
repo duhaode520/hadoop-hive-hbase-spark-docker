@@ -1,7 +1,8 @@
 #!/bin/bash
 
 # reboot sshd service,must refresh ssh service
-/etc/init.d/sshd restart
+# /etc/init.d/sshd restart
+service ssh restart
 
 # https://blog.csdn.net/jmx_bigdata/article/details/98506875
 # Sqoop报错：ERROR Could not register mbeans java.security.AccessControlException: access denied
@@ -13,7 +14,7 @@ sed -i 's/Warning: $ACCUMULO_HOME does not exist! Accumulo imports will fail./$A
 
 
 # ping函数
-auto_ping(){
+auto_ping() {
 # ping一次该ip, 超时设置1s(如果1s内没ping通，就停止ping)
   if ping -c 1 -w 1 $1 > /dev/null;then
     echo "ping $1 success"
@@ -132,9 +133,9 @@ if [ ! -e $CONTAINER_ALREADY_STARTED ]; then
     schematool -dbType postgres -initSchema
     echo "-- container first startup : init trino configuration--"
     # coordinator and work identify itself using different config file
-    mv "${TRINO_CONF_DIR}/config.properties.coordinator" "${TRINO_CONF_DIR}/config.properties"   
-  elif [ "${HADOOP_NODE}" = "datanode" ]; then 
-    mv "${TRINO_CONF_DIR}/config.properties.worker" "${TRINO_CONF_DIR}/config.properties" 
+    # mv "${TRINO_CONF_DIR}/config.properties.coordinator" "${TRINO_CONF_DIR}/config.properties"   
+  # elif [ "${HADOOP_NODE}" = "datanode" ]; then 
+    # mv "${TRINO_CONF_DIR}/config.properties.worker" "${TRINO_CONF_DIR}/config.properties" 
   fi
 
   # use random number to identify trino node ID

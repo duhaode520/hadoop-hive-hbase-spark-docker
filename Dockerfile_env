@@ -6,7 +6,6 @@ FROM alpine:3.10.4 as env_package
 # 清华源镜像apache 地址： https://mirrors.tuna.tsinghua.edu.cn/apache/
 # 修改alpine源，为国内清华镜像源
 RUN sed -i 's/dl-cdn.alpinelinux.org/mirrors.tuna.tsinghua.edu.cn/g' /etc/apk/repositories
-
 ENV USR_PROGRAM_DIR=/usr/program
 ENV USR_BIN_DIR="${USR_PROGRAM_DIR}/source_dir"
 RUN mkdir -p "${USR_BIN_DIR}"
@@ -129,7 +128,7 @@ RUN apk add --no-cache \
     'g++=~8.3' \
     'libc6-compat=~1.1' \
 	tcl tk expect \
-    && ln -s /lib64/ld-linux-x86-64.so.2 /lib/ld-linux-x86-64.so.2
+    # && ln -s /lib64/ld-linux-x86-64.so.2 /lib/ld-linux-x86-64.so.2
 
 # https://github.com/hadolint/hadolint/wiki/DL4006
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
