@@ -1,0 +1,261 @@
+# Alpine 3.11 contains Python 3.8, pyspark only supports Python up to 3.7
+FROM duhaode520/bigdata_env:1.0 as base_package
+
+
+################################-- Start Packaging --######################################
+FROM base_package as application_package
+
+# 使用本地的源文件，加快rebuild速度，方便调试
+COPY tar-source-files/* "${USR_PROGRAM_DIR}/source_dir/"
+WORKDIR "${USR_PROGRAM_DIR}/source_dir"
+
+# 清华源镜像apache 地址： https://mirrors.tuna.tsinghua.edu.cn/apache/
+
+# Hadoop Package
+# 国内加速地址，注意版本不全
+# native 是为了兼容trino
+# http://mirrors.aliyun.com/apache/hadoop/common/hadoop-${HADOOP_VERSION}/hadoop-${HADOOP_VERSION}.tar.gz
+# 如果本地${USR_PROGRAM_DIR}/source_dir文件夹没有，则下载。
+RUN if [ ! -f ${HADOOP_PACKAGE} ] ; then curl --progress-bar -L --retry 3 \
+  "http://mirrors.aliyun.com/apache/hadoop/common/hadoop-${HADOOP_VERSION}/${HADOOP_PACKAGE}" -o "${USR_PROGRAM_DIR}/source_dir/${HADOOP_PACKAGE}" ; fi \
+  && tar -xf "${USR_PROGRAM_DIR}/source_dir/${HADOOP_PACKAGE}" -C "${USR_PROGRAM_DIR}/" \
+  && mv "${USR_PROGRAM_DIR}/hadoop-${HADOOP_VERSION}" "${HADOOP_HOME}" \
+  && mkdir -p "${HADOOP_LOG_DIR}" \
+  && rm -rf "${HADOOP_HOME}/share/doc" \
+  && chown -R root:root "${HADOOP_HOME}"
+
+# Hadoop JVM crashes on Alpine when it tries to load native libraries.
+# Solution? Delete those altogether. Alternatively, you can try and compile them
+# https://hadoop.apache.org/docs/stable/hadoop-project-dist/hadoop-common/NativeLibraries.html
+RUN echo 'remove hadoop native dir' && rm -rf "${HADOOP_HOME}/lib/native"
+
+# RUN tar -xf "${USR_PROGRAM_DIR}/source_dir/${HIVE_PACKAGE}" -C "${USR_PROGRAM_DIR}/"
+# Hive Package
+# 国内加速地址，注意版本不全
+# http://mirrors.aliyun.com/apache/hive/hive-${HIVE_VERSION}/apache-hive-${HIVE_VERSION}-bin.tar.gz
+# 如果本地{USR_PROGRAM_DIR}/source_dir文件夹没有，则下载。
+RUN if [ ! -f "${HIVE_PACKAGE}" ]; then curl --progress-bar -L \
+   "http://mirrors.aliyun.com/apache/hive/hive-${HIVE_VERSION}/${HIVE_PACKAGE}" -o "${USR_PROGRAM_DIR}/source_dir/${HIVE_PACKAGE}" ; fi \ 
+  #  "https://archive.apache.org/dist/hive/hive-${HIVE_VERSION}/${HIVE_PACKAGE}" -o "${USR_PROGRAM_DIR}/source_dir/${HIVE_PACKAGE}" ; fi \ 
+   && tar -xf "${USR_PROGRAM_DIR}/source_dir/${HIVE_PACKAGE}" -C "${USR_PROGRAM_DIR}/" \
+   && mv "${USR_PROGRAM_DIR}/apache-hive-${HIVE_VERSION}-bin" "${HIVE_HOME}" \
+   && chown -R root:root "${HIVE_HOME}" \
+   && mkdir -p "${HIVE_HOME}/hcatalog/var/log" \
+   && mkdir -p "${HIVE_HOME}/var/log" \
+   && mkdir -p "${HIVE_LOG_DIR}" \
+   && chmod 755 "${HIVE_HOME}/hcatalog/var/log" \
+   && chmod 755 "${HIVE_HOME}/var/log" \
+   && chmod 755 "${HIVE_LOG_DIR}"
+
+# HBase Package
+# 如果需要网络下载，请删除RUN tar -xf "hbase-${HBASE_VERSION}-bin.tar.gz" -C /usr/ \行，并取消注释如下几行
+# 国内加速地址，注意版本不全
+# http://mirrors.aliyun.com/apache/hbase/${HBASE_VERSION}/hbase-${HBASE_VERSION}-bin.tar.gz
+# 如果本地{USR_PROGRAM_DIR}/source_dir文件夹没有，则下载。
+RUN if [ ! -f "${HBASE_PACKAGE}" ]; then curl --progress-bar -L \
+  "http://archive.apache.org/dist/hbase/${HBASE_VERSION}/${HBASE_PACKAGE}" -o "${USR_PROGRAM_DIR}/source_dir/${HBASE_PACKAGE}" ; fi \
+  && tar -xf "${USR_PROGRAM_DIR}/source_dir/${HBASE_PACKAGE}" -C "${USR_PROGRAM_DIR}/" \
+  && mv "${USR_PROGRAM_DIR}/hbase-${HBASE_VERSION}" "${HBASE_HOME}" \
+  && chown -R root:root "${HBASE_HOME}"
+
+# Spark Package
+# 国内加速地址，注意版本不全
+# http://mirrors.aliyun.com/apache/spark/spark-${SPARK_VERSION}/spark-${SPARK_VERSION}-bin-without-hadoop.tgz
+# 如果本地{USR_PROGRAM_DIR}/source_dir文件夹没有，则下载。
+RUN if [ ! -f "${SPARK_PACKAGE}" ] ; then curl --progress-bar -L --retry 3 \
+  "https://archive.apache.org/dist/spark/spark-${SPARK_VERSION}/${SPARK_PACKAGE}" -o "${USR_PROGRAM_DIR}/source_dir/${SPARK_PACKAGE}" ; fi \
+  && tar -xf "${USR_PROGRAM_DIR}/source_dir/${SPARK_PACKAGE}" -C "${USR_PROGRAM_DIR}/" \
+  && mv "${USR_PROGRAM_DIR}/spark-${SPARK_VERSION}-bin-hadoop${SPARK_HADOOP_VERSION}" "${SPARK_HOME}" \
+  && chown -R root:root "${SPARK_HOME}" \
+  && cp "${USR_PROGRAM_DIR}/source_dir/spark-avro_2.12-${SPARK_VERSION}.jar" "${SPARK_HOME}/jars"
+# 兼容spark hudi 需要spark-avro
+  
+# Sqoop Package
+# 国内加速地址，没有找到
+# 如果本地{USR_PROGRAM_DIR}/source_dir文件夹没有，则下载。
+RUN if [ ! -f "${SQOOP_PACKAGE}" ]; then curl --progress-bar -L --retry 3 \
+  "http://archive.apache.org/dist/sqoop/${SQOOP_VERSION}/${SQOOP_PACKAGE}" -o "${USR_PROGRAM_DIR}/source_dir/${SQOOP_PACKAGE}" ; fi \
+  && tar -xf "${USR_PROGRAM_DIR}/source_dir/${SQOOP_PACKAGE}" -C "${USR_PROGRAM_DIR}/" \
+  && mv "${USR_PROGRAM_DIR}/sqoop-${SQOOP_VERSION}.bin__hadoop-${HADOOP_SQOOP_VERSION}" "${SQOOP_HOME}" \
+  && chown -R root:root "${SQOOP_HOME}" \
+  && mkdir -p "${SQOOP_HOME}/logs"
+
+
+# Tez Package
+# 国内加速地址，没有找到
+# 如果本地{USR_PROGRAM_DIR}/source_dir文件夹没有，则下载。
+RUN if [ ! -f "${TEZ_PACKAGE}" ]; then curl --progress-bar -L --retry 3 \
+  "https://dlcdn.apache.org/tez/${TEZ_VERSION}/apache-tez-${TEZ_VERSION}-bin.tar.gz" -o "${USR_PROGRAM_DIR}/source_dir/${TEZ_PACKAGE}" ; fi \
+  && tar -xf "${USR_PROGRAM_DIR}/source_dir/${TEZ_PACKAGE}" -C "${USR_PROGRAM_DIR}/" \
+  && mv "${USR_PROGRAM_DIR}/apache-tez-${TEZ_VERSION}-bin" "${TEZ_HOME}" \
+  && chown -R root:root "${TEZ_HOME}" \
+  && mkdir -p "${TEZ_HOME}/logs" 
+
+# Flink Package
+# 国内加速地址，注意版本不全
+# http://mirrors.aliyun.com/apache/flink/flink-${FLINK_VERSION}/flink-${FLINK_VERSION}-bin-scala_${FLINK_SCALA_VERSION}.tgz
+# 如果本地{USR_PROGRAM_DIR}/source_dir文件夹没有，则下载。
+RUN if [ ! -f "${FLINK_PACKAGE}" ] ; then curl --progress-bar -L --retry 3 \
+  "https://dlcdn.apache.org/flink/flink-${FLINK_VERSION}/flink-${FLINK_VERSION}-bin-scala_${FLINK_SCALA_VERSION}.tgz" -o "${USR_PROGRAM_DIR}/source_dir/${FLINK_PACKAGE}" ; fi \
+  && tar -xf "${USR_PROGRAM_DIR}/source_dir/${FLINK_PACKAGE}" -C "${USR_PROGRAM_DIR}/" \
+  && mv "${USR_PROGRAM_DIR}/flink-${FLINK_VERSION}" "${FLINK_HOME}" \
+  && mkdir -p "${FLINK_LOG_DIR}" \
+  && chown -R root:root "${FLINK_HOME}"
+
+# Flink 整合Hadoop
+# https://flink.apache.org/downloads.html --> Additional Components --> Pre-bundled Hadoop 2.8.3
+ENV FLINK_PRE_BUNDLED_HADOOP_JAR=flink-shaded-hadoop-2-uber-2.8.3-10.0.jar
+RUN if [ ! -f "${FLINK_PRE_BUNDLED_HADOOP_JAR}" ] ; then curl --progress-bar -L --retry 3 \
+  "https://repo.maven.apache.org/maven2/org/apache/flink/flink-shaded-hadoop-2-uber/2.8.3-10.0/${FLINK_PRE_BUNDLED_HADOOP_JAR}" -o "${FLINK_HOME}/lib/" ; \
+  else mv "${USR_PROGRAM_DIR}/source_dir/${FLINK_PRE_BUNDLED_HADOOP_JAR}" "${FLINK_HOME}/lib/"; fi
+
+ 
+# Zookeeper Package
+# ZooKeeper此处只借用zk的Client，并不安装zk服务
+# 国内加速地址，注意版本不全
+# http://mirrors.aliyun.com/apache/zookeeper/zookeeper-${ZK_VERSION}/apache-zookeeper-${ZK_VERSION}-bin.tar.gz
+# 如果本地{USR_PROGRAM_DIR}/source_dir文件夹没有，则下载。
+#RUN if [ ! -f "${ZK_PACKAGE}" ]; then curl --progress-bar -L --retry 3 \
+#  "https://archive.apache.org/dist/zookeeper/zookeeper-${ZK_VERSION}/${ZK_PACKAGE}"  -o "${USR_PROGRAM_DIR}/source_dir/${ZK_PACKAGE}" ; fi \
+#  && tar -xf "${USR_PROGRAM_DIR}/source_dir/${ZK_PACKAGE}" -C "${USR_PROGRAM_DIR}" \
+#  && mv "${USR_PROGRAM_DIR}/apache-zookeeper-${ZK_VERSION}-bin" "${ZK_HOME}" \
+#  && chown -R root:root "${ZK_HOME}"
+
+# HUDI Package 集成 hive spark flink
+RUN cp "${USR_PROGRAM_DIR}/source_dir/hudi-hive-sync-bundle-0.10.0.jar" "${HIVE_HOME}/lib/" \
+ && cp "${USR_PROGRAM_DIR}/source_dir/hudi-hadoop-mr-bundle-0.10.0.jar" "${HIVE_HOME}/lib/" \
+ && cp "${USR_PROGRAM_DIR}/source_dir/hudi-spark3-bundle_2.12-0.10.0.jar" "${SPARK_HOME}/jars/" \
+ && cp "${USR_PROGRAM_DIR}/source_dir/hudi-flink-bundle_2.12-0.10.0.jar" "${FLINK_HOME}/lib/"
+
+# JDK11和Trino(PrestoSQL)
+# 如果本地{USR_PROGRAM_DIR}/source_dir文件夹没有，则下载。
+# 注意对于alpine 必须使用musl版本的JDK
+# ENV ZULU_JDK11_PACKAGE=zulu11.56.19-ca-jdk11.0.15-linux_musl_x64.tar.gz
+# ENV ZULU_JDK11_UNPACK=zulu11.56.19-ca-jdk11.0.15-linux_musl_x64
+# RUN if [ ! -f "${ZULU_JDK11_PACKAGE}" ]; then curl --progress-bar -L --retry 3 \
+#   "https://cdn.azul.com/zulu/bin/${ZULU_JDK11_PACKAGE}"  -o "${USR_PROGRAM_DIR}/source_dir/${ZULU_JDK11_PACKAGE}" ; fi \
+#   && tar -xf "${USR_PROGRAM_DIR}/source_dir/${ZULU_JDK11_PACKAGE}" -C "${USR_PROGRAM_DIR}" \
+#   && mv "${USR_PROGRAM_DIR}/${ZULU_JDK11_UNPACK}" "${ZULU_JDK11_HOME}" \
+#   && chown -R root:root "${ZULU_JDK11_HOME}"
+
+# ENV TRINO_PACKAGE=trino-server-${TRINO_VERSION}.tar.gz
+# RUN if [ ! -f "${TRINO_PACKAGE}" ]; then curl --progress-bar -L --retry 3 \
+#   "https://repo1.maven.org/maven2/io/trino/trino-server/${TRINO_VERSION}/${TRINO_PACKAGE}"  -o "${USR_PROGRAM_DIR}/source_dir/${TRINO_PACKAGE}" ; fi \
+#   && tar -xf "${USR_PROGRAM_DIR}/source_dir/${TRINO_PACKAGE}" -C "${USR_PROGRAM_DIR}" \
+#   && mv "${USR_PROGRAM_DIR}/trino-server-${TRINO_VERSION}" "${TRINO_HOME}" \
+#   && mkdir -p "${TRINO_HOME}/etc/catalog" \
+#   && mv "${USR_PROGRAM_DIR}/source_dir/trino-jdbc-${TRINO_VERSION}.jar" "${TRINO_HOME}/lib" \
+#   && mv "${USR_PROGRAM_DIR}/source_dir/trino-cli-${TRINO_VERSION}-executable.jar" "${TRINO_HOME}/lib" \
+#   && ln -s $TRINO_HOME/lib/trino-cli-${TRINO_VERSION}-executable.jar $TRINO_HOME/bin/trino-cli \
+#   && chmod +x $TRINO_HOME/bin/trino-cli \
+#   && chown -R root:root "${TRINO_HOME}" 
+
+
+# LIVY 220426:0.8.0以及以上版本需要自己编译 
+# 如果${USR_PROGRAM_DIR}/source_dir不存在，则下载
+RUN if [ ! -f "${LIVY_PACKAGE}" ]; then curl --progress-bar -L --retry 3 \
+    "http://archive.apache.org/dist/incubator/livy/${LIVY_VERSION}/${LIVY_PACKAGE}" -o "${USR_PROGRAM_DIR}/source_dir/${LIVY_PACKAGE}" ; fi \	
+  && unzip -qq "${USR_PROGRAM_DIR}/source_dir/${LIVY_PACKAGE}" -d "${USR_PROGRAM_DIR}" \
+  && mv "${USR_PROGRAM_DIR}/apache-livy-${LIVY_VERSION}-bin" "${LIVY_HOME}" \
+  && mkdir -p "${LIVY_LOG_DIR}" \
+  && chown -R root:root "${LIVY_HOME}" \
+  && chmod +755 -R "${LIVY_HOME}" 
+
+
+# Clean up 清除安装目录下的压缩包
+RUN rm -rf "${USR_PROGRAM_DIR}/source_dir/*" \
+    && rm -rf "${HIVE_HOME}/examples" \
+    && rm -rf "${SPARK_HOME}/examples/src" \
+	&& rm /usr/program/hive/lib/guava-19.0.jar \
+    && cp  /usr/program/hadoop/share/hadoop/common/lib/guava-27.0-jre.jar /usr/program/hive/lib/ \
+    && rm -rf "${USR_PROGRAM_DIR}/source_dir"
+###############################################-- End Packaging --############################################
+FROM base_package
+
+# curl and unzip: download and extract Hive, Hadoop, Spark etc.
+# bash: Hadoop is not compatible with Alpine's `ash` shell
+# openjdk8: Java
+# coreutils: Spark launcher script relies on GNU implementation of `nice`
+# procps: Hadoop needs GNU `ps` utility
+# findutils: Spark needs GNU `find` to run jobs (weird but true)
+# ncurses: so that you can run `yarn top`
+
+
+RUN mkdir -p "${USR_PROGRAM_DIR}/source_dir"
+# 从application_package阶段复制已经解压好的文件
+COPY --from=application_package "${USR_PROGRAM_DIR}"/ "${USR_PROGRAM_DIR}"/
+WORKDIR "${USR_PROGRAM_DIR}"
+
+# Hadoop setup
+COPY conf/hadoop/core-site.xml "${HADOOP_CONF_DIR}"/
+COPY conf/hadoop/hadoop-env.sh "${HADOOP_CONF_DIR}"/
+COPY conf/hadoop/hdfs-site.xml "${HADOOP_CONF_DIR}"/
+COPY conf/hadoop/mapred-site.xml "${HADOOP_CONF_DIR}"/
+COPY conf/hadoop/workers "${HADOOP_CONF_DIR}"/
+COPY conf/hadoop/yarn-site.xml "${HADOOP_CONF_DIR}"/
+COPY conf/tez/tez-site.xml "${HADOOP_CONF_DIR}"/
+
+# Hive setup
+COPY conf/hive/hive-site.xml "${HIVE_CONF_DIR}"/
+COPY conf/hive/hive-env.sh "${HIVE_CONF_DIR}"/
+# COPY conf/tez/tez-site.xml "${HIVE_CONF_DIR}"/
+COPY conf/hive/hive-log4j2.properties "${HIVE_CONF_DIR}"/
+COPY jdbc_drivers/* "${HIVE_HOME}/lib/"
+
+# it is a pity than two scripts below would not work, then script for same goat have been added in entrypoint.sh file.
+RUN for jar in `ls $TEZ_HOME | grep jar`; do export HADOOP_CLASSPATH=$HADOOP_CLASSPATH:$TEZ_HOME/$jar; done 
+RUN for jar in `ls $TEZ_HOME/lib`; do export HADOOP_CLASSPATH=$HADOOP_CLASSPATH:$TEZ_HOME/lib/$jar; done
+
+# Spark setup
+COPY conf/hadoop/core-site.xml "${SPARK_CONF_DIR}"/
+COPY conf/hadoop/hdfs-site.xml "${SPARK_CONF_DIR}"/
+COPY conf/hadoop/yarn-site.xml "${SPARK_CONF_DIR}"/
+COPY conf/hive/hive-site.xml "${SPARK_CONF_DIR}"/
+COPY conf/spark/spark-defaults.conf "${SPARK_CONF_DIR}"/
+COPY jdbc_drivers/* "${SPARK_HOME}/jars/"
+
+# HBase setup
+COPY conf/hbase/hbase-env.sh "${HBASE_CONF_DIR}"/
+COPY conf/hbase/hbase-site.xml "${HBASE_CONF_DIR}"/
+COPY conf/hadoop/core-site.xml "${HBASE_CONF_DIR}"/
+COPY conf/hadoop/hdfs-site.xml "${HBASE_CONF_DIR}"/
+RUN echo "export JAVA_HOME=${JAVA_HOME}" >>  "${HBASE_CONF_DIR}/hbase-env.sh"
+
+# Flink setup
+COPY conf/flink/flink-conf.yaml "${FLINK_CONF_DIR}"/
+COPY conf/flink/masters "${FLINK_CONF_DIR}"/
+COPY conf/flink/workers "${FLINK_CONF_DIR}"/
+COPY conf/hadoop/core-site.xml "${FLINK_CONF_DIR}"/
+COPY conf/hadoop/hdfs-site.xml "${FLINK_CONF_DIR}"/
+COPY conf/hadoop/yarn-site.xml "${FLINK_CONF_DIR}"/
+
+# # Trino setup
+# COPY conf/trino/config.properties.coordinator "${TRINO_CONF_DIR}"/
+# COPY conf/trino/config.properties.worker "${TRINO_CONF_DIR}"/
+# COPY conf/trino/jvm.config "${TRINO_CONF_DIR}"/
+# COPY conf/trino/log.properties "${TRINO_CONF_DIR}"/
+# COPY conf/trino/node.properties "${TRINO_CONF_DIR}"/
+# in launcher zulu-jdk11 path added
+# COPY conf/trino/launcher "${TRINO_HOME}/bin"/
+# COPY conf/trino/catalog "${TRINO_HOME}/etc/catalog"/
+
+# Sqoop setup
+COPY jdbc_drivers/* "${SQOOP_HOME}/lib"/
+COPY conf/sqoop/* "${SQOOP_CONF_DIR}"/
+COPY conf/hive/hive-site.xml "${SQOOP_CONF_DIR}"/
+RUN cp "${HIVE_HOME}/lib/hive-exec-${HIVE_VERSION}.jar" "${SQOOP_HOME}/lib"/
+
+# Livy setup
+COPY conf/livy/* "${LIVY_CONF_DIR}"/
+
+
+# If both YARN Web UI and Spark UI is up, then returns 0, 1 otherwise.
+HEALTHCHECK CMD curl -f http://host.docker.internal:8080/ \
+    && curl -f http://host.docker.internal:8088/ || exit 1
+
+# Entry point: start all services and applications.
+COPY entrypoint.sh /
+RUN chmod +x /entrypoint.sh
+
+WORKDIR /usr/program
+ENTRYPOINT ["/entrypoint.sh"]
